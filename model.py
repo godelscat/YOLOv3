@@ -102,16 +102,16 @@ default input image is (3, 256, 256), channel-first
 class DarknetBody(nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv1 = nn.Conv2d(3, 32, 3, 1, 1)
-        self.conv2 = nn.Conv2d(32, 64, 3, 2, 1)
+        self.conv1 = ConvBlock(3, 32, 3, 1)
+        self.conv2 = ConvBlock(32, 64, 3, 2)
         self.block1 = ResLoop(64, 32, 1)
-        self.conv3 = nn.Conv2d(64, 128, 3, 2, 1)
+        self.conv3 = ConvBlock(64, 128, 3, 2)
         self.block2 = ResLoop(128, 64, 2)
-        self.conv4 = nn.Conv2d(128, 256, 3, 2, 1)
+        self.conv4 = ConvBlock(128, 256, 3, 2)
         self.block3 = ResLoop(256, 128, 8) # cache output for concat
-        self.conv5 = nn.Conv2d(256, 512, 3, 2, 1)
+        self.conv5 = ConvBlock(256, 512, 3, 2)
         self.block4 = ResLoop(512, 256, 8) # cache output for concat
-        self.conv6 = nn.Conv2d(512, 1024, 3, 2, 1)
+        self.conv6 = ConvBlock(512, 1024, 3, 2)
         self.block5 = ResLoop(1024, 512, 4)
     
     def forward(self, x):
@@ -147,15 +147,15 @@ class ScaleBlock(nn.Module):
         self.in_channels = self.out_channels * 2 
         self.block = nn.Sequential(
             *[
-                nn.Conv2d(self.first_in, self.out_channels, 1, 1),
-                nn.Conv2d(self.out_channels, self.in_channels, 3, 1, 1),
-                nn.Conv2d(self.in_channels, self.out_channels, 1, 1),
-                nn.Conv2d(self.out_channels, self.in_channels, 3, 1, 1),
-                nn.Conv2d(self.in_channels, self.out_channels, 1, 1),
-                nn.Conv2d(self.out_channels, self.in_channels, 3, 1, 1),
+                ConvBlock(self.first_in, self.out_channels, 1, 1),
+                ConvBlock(self.out_channels, self.in_channels, 3, 1),
+                ConvBlock(self.in_channels, self.out_channels, 1, 1),
+                ConvBlock(self.out_channels, self.in_channels, 3, 1),
+                ConvBlock(self.in_channels, self.out_channels, 1, 1),
+                ConvBlock(self.out_channels, self.in_channels, 3, 1),
             ]
         )
-        self.out = nn.Conv2d(self.in_channels, 255, 1, 1)
+        self.out = nn.Conv2d(self.in_channels, 255, 1, 1) # outputs
     
     def forward(self, x):
         x = self.block(x)
@@ -172,9 +172,9 @@ class YOLO(nn.Module):
         super().__init__()
         self.darknet = DarknetBody()
         self.block1 = ScaleBlock(1024, 512)
-        self.conv1 = nn.Conv2d(255, 256, 1, 1)
+        self.conv1 = ConvBlock(255, 256, 1, 1)
         self.block2 = ScaleBlock(768, 256)
-        self.conv2 = nn.Conv2d(255, 128, 1, 1)
+        self.conv2 = ConvBlock(255, 128, 1, 1)
         self.block3 = ScaleBlock(384, 128)
 
     def forward(self, x):
