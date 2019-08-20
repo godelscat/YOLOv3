@@ -44,6 +44,10 @@ def create_mask(targets, anchors, eps=1e-8):
 """
 Compute yolo one scale loss
 We do not consider the first 12800 iters
+feats: one scale output of yolo model
+    shape->[B, A*(num_cls+5), H, W]
+targets: tensor; outputs of img_grid
+    shape->[B, H, W, num_cls+4]
 """
 def one_scale_loss(feats, targets, anchors, num_classes=80, iou_threshold=0.6):
     """default loss params"""
@@ -107,6 +111,23 @@ def one_scale_loss(feats, targets, anchors, num_classes=80, iou_threshold=0.6):
     loss_ = 0.5 * (noobj_loss + obj_loss + coord_loss + class_loss)
     return loss_
 
+"""
+compute the whole yolo loss
+labels: array; shape->[B, num_of_boxes, 5+]
+"""
+def yolo_loss(feats, labels, anchors, image_size, num_cls=80, iou_threshold=0.6):
+    anchor_mask = np.array([[6, 7, 8], [3, 4, 5], [0, 1, 2]])
+    loss = 0.
+    init_downsample = 32
+    for l in range(3):
+        feat = feats[l]
+        device = feat.device
+        anchor = anchors[anchor_mask[l]]
+        downsample = init_downsample // 2**l
+        target = img_grid(labels, image_size, device, downsample, num_cls)
+        loss_ = one_scale_loss(feat, target, anchor, num_cls, iou_threshold) 
+        loss += loss_
+    return loss
 
 if __name__ == "__main__":
     import numpy as np
