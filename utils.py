@@ -20,9 +20,9 @@ box1: (x1, y1, x2, y2)
 box2: (x1, y1, x2, y2)
 """
 def iou(box1, box2, eps=1e-8):
-    device = box1.device
     box1_x1, box1_y1, box1_x2, box1_y2 = box1
     box2_x1, box2_y1, box2_x2, box2_y2 = box2
+    device = box1_x1.device
 
     x1 = torch.max(box1_x1, box2_x1)
     y1 = torch.max(box1_y1, box2_y1)
@@ -50,7 +50,7 @@ labels: array
         coord value are as unit of image_size
 image_size: (width, height)
 """
-def img_grid(labels, image_size, downsample=32, num_cls=80):
+def img_grid(labels, image_size, device, downsample=32, num_cls=80):
     im_W, im_H = image_size
     assert im_W % downsample == 0
     assert im_H % downsample == 0
@@ -73,4 +73,5 @@ def img_grid(labels, image_size, downsample=32, num_cls=80):
             for c in box[4:]:
                 targets[b, i, j, 4+c] = 1 
             """
+    targets.to(device)
     return targets
