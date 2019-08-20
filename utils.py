@@ -57,21 +57,33 @@ def img_grid(labels, image_size, device, downsample=32, num_cls=80):
     W, H = im_W // downsample, im_H // downsample # num of grids
     B = len(labels) 
     targets = torch.zeros((B, H, W, 4 + num_cls), dtype=torch.float)
-    labels[..., 0:2] = labels[..., 0:2] * np.array([H, W]).reshape(1, 2)
-    for b in B:
-        for box in labels[b]:
+    labels_ = labels.copy()
+    labels_[..., 0:2] = labels_[..., 0:2] * np.array([H, W]).reshape(1, 2)
+    for b in range(B):
+        for box in labels_[b]:
             i = int(box[0])
             j = int(box[1])
             targets[b, i, j, 0] = box[0] / H
             targets[b, i, j, 1] = box[1] / W
             targets[b, i, j, 2] = box[2]
             targets[b, i, j, 3] = box[3]
-            targets[b, i, j, 4+box[4]] = 1 # only one-label
+            targets[b, i, j, int(4+box[4])] = 1 # only one-label
             """
             # support multilabel
             # transform into one-hot label
             for c in box[4:]:
-                targets[b, i, j, 4+c] = 1 
+                targets[b, i, j, int(4+c)] = 1 
             """
-    targets.to(device)
+    targets = targets.to(device)
     return targets
+
+"""
+Read the classes names
+"""
+def get_classes(file_path):
+    classes = []
+    with open(file_path, 'r')  as f:
+        for line in f.readlines():
+            line = line.rstrip()
+            classes.append(line)
+    return classes

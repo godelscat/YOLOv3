@@ -4,6 +4,7 @@ compute yolo loss
 import torch
 from utils import whToxy, iou, img_grid
 from decode import decode
+import numpy as np
 
 """
 TO DO:    find the anchor which is responsible for the true box 
@@ -38,7 +39,7 @@ def create_mask(targets, anchors, eps=1e-8):
     best_iou, _ = torch.max(iou_scores, dim=3, keepdim=True)
     mask = (iou_scores == best_iou).to(torch.float)
     if mask.device != device:
-        mask.to(device)
+        mask = mask.to(device)
     return mask
 
 """
@@ -78,7 +79,7 @@ def one_scale_loss(feats, targets, anchors, num_classes=80, iou_threshold=0.6):
     best_ious, _ = torch.max(ious, dim=3, keepdim=True)
 
     obj_mask = (best_ious > iou_threshold).to(torch.float)
-    obj_mask.to(device)
+    obj_mask = obj_mask.to(device)
     detector_mask = create_mask(targets, anchors)
     obj_mask = obj_mask.view(B, H, W, 1, 1)
     detector_mask = detector_mask.view(B, H, W, A, 1)
