@@ -46,8 +46,10 @@ def decode(feats, anchors, num_classes, device):
     ph = anchors[..., 1:2]
     bw = pw * torch.exp(tw) / W
     bh = ph * torch.exp(th) / H
+    """
     boxes = torch.cat(
-        (bx, by, bh, by), dim=-1
+        (bx, by, bw, bh), dim=-1
     )
-    assert boxes.size() == (B, H, W, num_anchors, 4)
+    """
+    boxes = (bx, by, bw, bh)
     return boxes, box_conf, box_cls
