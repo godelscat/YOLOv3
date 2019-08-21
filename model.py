@@ -5,6 +5,7 @@ Ref: https://github.com/qqwweee/keras-yolo3
 import torch
 from torch import nn
 import torch.nn.functional as F
+import numpy as np
 
 """
 ConvBlock: including conv2d, batchNormalization, LeakyReLU
@@ -194,11 +195,108 @@ class YOLO(nn.Module):
         x = self.block3(x)
         out.append(x)
         return out
+    
+
+"""
+Load weights into pytorch model
+Ref: https://blog.paperspace.com/how-to-implement-a-yolo-v3-object-detector
+-from-scratch-in-pytorch-part-3/
+"""
+def load_weights(model, weightfile):
+    #Open the weights file
+    fp = open(weightfile, 'rb')
+
+    #The first 5 values are header information 
+    # 1. Major version number
+    # 2. Minor Version Number
+    # 3. Subversion number 
+    # 4,5. Images seen by the network (during training)
+    header = np.fromfile(fp, dtype=np.int32, count=5)
+    header = torch.from_numpy(header)
+    seen = header[3]
+
+    weights = np.fromfile(fp, dtype=np.float32)
+    
+    ptr = 0
+    for layer in model.named_modules():
+        if isinstance(layer[1], ConvBlock):
+            bn = layer[1].bn
+            conv = layer[1].conv
+            num_bn_biases = bn.bias.numel()
+
+            # load bn weights 
+            bn_biases = torch.from_numpy(weights[ptr : ptr + num_bn_biases])
+            ptr += num_bn_biases
+
+            bn_weights = torch.from_numpy(weights[ptr : ptr + num_bn_biases])
+            ptr += num_bn_biases
+
+            bn_running_mean = torch.from_numpy(weights[ptr : ptr + num_bn_biases])
+            ptr += num_bn_biases
+
+            bn_running_var = torch.from_numpy(weights[ptr : ptr + num_bn_biases])
+            ptr += num_bn_biases
+
+            # cast the load weights into dims of model weights
+            bn_biases = bn_biases.view_as(bn.bias.data)
+            bn_weights = bn_weights.view_as(bn.weight.data)
+            bn_running_mean = bn_running_mean.view_as(bn.running_mean)
+            bn_running_var = bn_running_var.view_as(bn.running_var)
+
+            # copy data to the model
+            bn.bias.data.copy_(bn_biases)
+            bn.weight.data.copy_(bn_weights)
+            bn.running_mean.copy_(bn_running_mean)
+            bn.running_var.copy_(bn_running_var)
+
+            # conv layer
+            num_conv_weights = conv.weight.numel()
+
+            # load conv weights
+            conv_weights = torch.from_numpy(weights[ptr : ptr + num_conv_weights])
+            ptr += num_conv_weights
+
+            # reshape 
+            conv_weights = conv_weights.view_as(conv.weight.data)
+
+            # copy data to the model
+            conv.weight.data.copy_(conv_weights)
+
+        else:
+            if isinstance(layer[1], nn.Conv2d):
+                name = layer[0]
+                name_list = name.split('.')
+                layer_type = name_list[-1]
+                # layer only include conv not bn
+                if layer_type == 'out':
+                    conv = layer[1]
+                    num_conv_biases = conv.bias.numel()
+                    num_conv_weights = conv.weight.numel()
+
+                    # load conv weights
+                    conv_biases = torch.from_numpy(weights[ptr : ptr + num_conv_biases])
+                    ptr += num_conv_biases
+
+                    conv_weights = torch.from_numpy(weights[ptr : ptr + num_conv_weights])
+                    ptr += num_conv_weights
+
+                    # reshape 
+                    conv_biases = conv_biases.view_as(conv.bias.data)
+                    conv_weights = conv_weights.view_as(conv.weight.data)
+
+                    # copy data to the model
+                    conv.bias.data.copy_(conv_biases)
+                    conv.weight.data.copy_(conv_weights)
+
 
 if __name__ == "__main__":
     net = YOLO()
-    print(net)
     X = torch.rand(1, 3, 256, 256)
     out = net(X)
     print(len(out))
-    print([out_.size() for out_ in out])
+    weightfile = './weights/yolov3.weights'
+    load_weights(net, weightfile)
+    net.eval()
+    new_out = net(X)
+    print(len(new_out))
+    print(torch.equal(out[0], new_out[0]))
