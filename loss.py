@@ -2,7 +2,7 @@
 compute yolo loss
 """
 import torch
-from utils import whToxy, iou, img_grid
+from utils import whToxy, iou, preprocess_true_boxes
 from decode import decode
 import numpy as np
 
@@ -50,7 +50,7 @@ feats: one scale output of yolo model
 targets: tensor; outputs of img_grid
     shape->[B, H, W, num_cls+4]
 """
-def one_scale_loss(feats, targets, anchors, num_classes=80, iou_threshold=0.6):
+def one_scale_loss(feats, targets, anchors, image_size, downsample, num_classes=80, iou_threshold=0.6):
     """default loss params"""
     lambda_obj = 5
     lambda_noobj = 1
@@ -58,16 +58,25 @@ def one_scale_loss(feats, targets, anchors, num_classes=80, iou_threshold=0.6):
     lambda_coord = 1
 
     A = len(anchors)
+    B = feats.size()[0]
+    im_W, im_H = image_size
+    W, H = im_W // downsample, im_H // downsample
     device = feats.device
 
-    B, H, W, L = targets.size()
     p_box, p_c, p_cls = decode(feats, anchors, num_classes, device)
     p_x, p_y, p_w, p_h = p_box
-    targets_ = targets.view(B, H, W, 1, L)
-    t_x = targets_[..., 0:1] 
-    t_y = targets_[..., 1:2]
-    t_w = targets_[..., 3:4]
-    t_h = targets_[..., 4:5]
+
+    detector_mask, matching_true_boxes = preprocess_true_boxes(
+        targets, anchors, image_size, device, downsample, num_classes
+    )    
+    detector_mask = torch.from_numpy(detector_mask).to(device)
+    matching_true_boxes = torch.from_numpy(matching_true_boxes).to(device)
+
+    t_x = matching_true_boxes[..., 0:1] 
+    t_y = matching_true_boxes[..., 1:2]
+    t_w = matching_true_boxes[..., 3:4]
+    t_h = matching_true_boxes[..., 4:5]
+
     t_box = (t_x, t_y, t_w, t_h)
 
     p_box = whToxy(p_box)
@@ -75,27 +84,24 @@ def one_scale_loss(feats, targets, anchors, num_classes=80, iou_threshold=0.6):
 
     ious = iou(p_box, t_box) 
     ious = torch.squeeze(ious, dim=-1)
-    assert ious.size() == (B, H, W, A)
     best_ious, _ = torch.max(ious, dim=3, keepdim=True)
 
     obj_mask = (best_ious > iou_threshold).to(torch.float)
     obj_mask = obj_mask.to(device)
-    detector_mask = create_mask(targets, anchors)
     obj_mask = obj_mask.view(B, H, W, 1, 1)
-    detector_mask = detector_mask.view(B, H, W, A, 1)
 
     """non object loss"""
-    noobj_loss =  torch.mean(
+    noobj_loss =  torch.sum(
         lambda_noobj * (1-obj_mask) * (1-detector_mask) * (-p_c)**2
     )
 
     """object loss"""
-    obj_loss = torch.mean(
+    obj_loss = torch.sum(
         lambda_obj * obj_mask * detector_mask * (1-p_c)**2
     )
 
     """coord loss"""
-    coord_loss = torch.mean(
+    coord_loss = torch.sum(
         lambda_coord * obj_mask * detector_mask * (
             (p_x - t_x)**2 + (p_y - t_y)**2 \
             + (p_w - t_w)**2 + (p_h - t_h)**2
@@ -103,13 +109,17 @@ def one_scale_loss(feats, targets, anchors, num_classes=80, iou_threshold=0.6):
     )
 
     """classification loss"""
-    t_cls = targets_[..., 4:]
-    p_cls = p_cls * obj_mask * detector_mask
-    t_cls = t_cls * obj_mask * detector_mask
-    loss_fn = torch.nn.BCELoss()
-    class_loss = lambda_class * loss_fn(p_cls, t_cls)
+    t_cls = matching_true_boxes[..., 4:]
+    p_cls = p_cls 
+    loss_fn = torch.nn.BCELoss(reduction='none')
+    class_loss = torch.sum(lambda_class * obj_mask * detector_mask * loss_fn(p_cls, t_cls))
+    """
+    class_loss = torch.sum(
+        lambda_class * detector_mask * (p_cls - t_cls)**2
+    )
+    """
 
-    loss_ = 0.5 * (noobj_loss + obj_loss + coord_loss + class_loss)
+    loss_ =  (noobj_loss + obj_loss + coord_loss + class_loss) / B
     return loss_
 
 """
@@ -125,8 +135,9 @@ def yolo_loss(feats, labels, anchors, image_size, num_cls=80, iou_threshold=0.6)
         device = feat.device
         anchor = anchors[anchor_mask[l]]
         downsample = init_downsample // 2**l
-        target = img_grid(labels, image_size, device, downsample, num_cls)
-        loss_ = one_scale_loss(feat, target, anchor, num_cls, iou_threshold) 
+#        target = img_grid(labels, image_size, device, downsample, num_cls)
+#        loss_ = one_scale_loss(feat, target, anchor, num_cls, iou_threshold) 
+        loss_ = one_scale_loss(feat, labels, anchor, image_size, downsample, num_cls)
         loss += loss_
     return loss
 
