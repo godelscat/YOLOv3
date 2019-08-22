@@ -153,14 +153,17 @@ class ScaleBlock(nn.Module):
                 ConvBlock(self.in_channels, self.out_channels, 1, 1),
                 ConvBlock(self.out_channels, self.in_channels, 3, 1),
                 ConvBlock(self.in_channels, self.out_channels, 1, 1),
-                ConvBlock(self.out_channels, self.in_channels, 3, 1),
             ]
         )
+
+        # route -4
+        self.conv = ConvBlock(self.out_channels, self.in_channels, 3, 1)
         self.out = nn.Conv2d(self.in_channels, 255, 1, 1) # outputs
     
     def forward(self, x):
         x = self.block(x)
-        y = self.out(x)
+        y = self.conv(x)
+        y = self.out(y)
         return x, y
 
 """
@@ -173,9 +176,9 @@ class YOLO(nn.Module):
         super().__init__()
         self.darknet = DarknetBody()
         self.block1 = ScaleBlock(1024, 512)
-        self.conv1 = ConvBlock(1024, 256, 1, 1)
+        self.conv1 = ConvBlock(512, 256, 1, 1)
         self.block2 = ScaleBlock(768, 256)
-        self.conv2 = ConvBlock(512, 128, 1, 1)
+        self.conv2 = ConvBlock(256, 128, 1, 1)
         self.block3 = ScaleBlock(384, 128)
 
     def forward(self, x):
