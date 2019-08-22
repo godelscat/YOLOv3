@@ -28,7 +28,6 @@ net.eval()
 
 out = net(x)
 
-
 """
 outputs = []
 for l in range(3):
@@ -38,13 +37,9 @@ for l in range(3):
     outputs.append(out_)
 
 one_scale_boxes = outputs[0][0]
-osx = one_scale_boxes[3]
-osx = osx.view(1, -1)
-print(osx[:, :20])
+osx = one_scale_boxes[0]
+osx = osx.permute(0, 3, 2, 1, 4).contiguous().view(1,-1)
+print(osx[0,:20])
 """
 
-out_size = [x.size() for x in out]
-print(out_size)
-
-first = out[0]
-print(first[0, 0, ...])
+# check loss
