@@ -44,8 +44,8 @@ def decode(feats, anchors, num_classes, device):
     anchors = anchors.view(1, 1, 1, num_anchors, 2)
     pw = anchors[..., 0:1]
     ph = anchors[..., 1:2]
-    bw = pw * torch.exp(tw) / W
-    bh = ph * torch.exp(th) / H
+    bw = pw * torch.exp(tw)
+    bh = ph * torch.exp(th)
     """
     boxes = torch.cat(
         (bx, by, bw, bh), dim=-1

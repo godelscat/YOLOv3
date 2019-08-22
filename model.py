@@ -160,8 +160,8 @@ class ScaleBlock(nn.Module):
     
     def forward(self, x):
         x = self.block(x)
-        x = self.out(x)
-        return x
+        y = self.out(x)
+        return x, y
 
 """
 YOLO: 3 outputs at different scale:
@@ -173,27 +173,26 @@ class YOLO(nn.Module):
         super().__init__()
         self.darknet = DarknetBody()
         self.block1 = ScaleBlock(1024, 512)
-        self.conv1 = ConvBlock(255, 256, 1, 1)
+        self.conv1 = ConvBlock(1024, 256, 1, 1)
         self.block2 = ScaleBlock(768, 256)
-        self.conv2 = ConvBlock(255, 128, 1, 1)
+        self.conv2 = ConvBlock(512, 128, 1, 1)
         self.block3 = ScaleBlock(384, 128)
 
     def forward(self, x):
         out = []
         x, cache = self.darknet(x)
-        x = self.block1(x)
-        out.append(x)
+        x, y1 = self.block1(x)
+        out.append(y1)
         x = self.conv1(x)
         x = F.interpolate(x, scale_factor=2)
-        assert len(cache) == 2
         x = torch.cat((x, cache[1]), dim=1) # channel-first
-        x = self.block2(x)
-        out.append(x)
+        x, y2 = self.block2(x)
+        out.append(y2)
         x = self.conv2(x)
         x = F.interpolate(x, scale_factor=2)
         x = torch.cat((x, cache[0]), dim=1)
-        x = self.block3(x)
-        out.append(x)
+        x, y3 = self.block3(x)
+        out.append(y3)
         return out
     
 
