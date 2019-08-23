@@ -1,12 +1,12 @@
 import torch
 from model import YOLO, load_weights
-from decode import decode
+from decode import full_decode
 from loss import yolo_loss
 import numpy as np
 
 # set random seed
 torch.manual_seed(7)
-device = torch.device('cpu')
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 anchors = np.array([
     [10, 13], [16, 30], [33, 23], [30, 61], [62, 45], 
@@ -36,13 +36,8 @@ net.eval()
 out = net(x)
 
 """
-outputs = []
-for l in range(3):
-    feat = out[l]
-    anchor = anchors[anchor_mask[l]]
-    out_ = decode(feat, anchor, 80, device)
-    outputs.append(out_)
-
+outputs = full_decode(out, anchors, anchor_mask, device)
+print(len(outputs))
 one_scale_boxes = outputs[0][0]
 osx = one_scale_boxes[0]
 osx = osx.permute(0, 3, 2, 1, 4).contiguous().view(1,-1)
@@ -50,6 +45,5 @@ print(osx[0,:20])
 """
 
 # check loss
-
-loss = yolo_loss(out, tars, anchors, image_size)
+loss = yolo_loss(out, tars, anchors, anchor_mask, device, image_size)
 print(loss)

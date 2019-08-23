@@ -51,7 +51,6 @@ def get_classes(file_path):
             classes.append(line)
     return classes
 
-
 """
 Find detector in YOLO where ground truth box should appear.
 Parameters
@@ -62,28 +61,17 @@ labels : array
     of the original image dimensions.
 anchors : array
     List of anchors in unit of initial image_size in the range [0, 1]
-image_size : array-like
-    List of image dimensions in form of h, w in pixels.
 Returns
 -------
-detectors_mask : array
-    0/1 mask for detectors in [conv_height, conv_width, num_anchors, 1]
-    that should be compared with a matching ground truth box.
-matching_true_boxes: array
-    Same shape as detectors_mask with the corresponding ground truth box
-    adjusted for comparison with predicted parameters at training time.
+matching_true_boxes: tensor, [B, H, W, A, num_cls + 5]
 -----------
 Ref: https://github.com/allanzelener/YAD2K
 """
-def preprocess_true_boxes(labels, anchors, image_size, device, downsample, num_cls=80):
-    im_W, im_H = image_size
-    assert im_W % downsample == 0
-    assert im_H % downsample == 0
-    W, H = im_W // downsample, im_H // downsample # num of grids
+def preprocess_true_boxes(labels, anchors, grid_size, device, num_cls=80):
+    W, H = grid_size
     A = len(anchors)
     B = len(labels) 
-    detector_mask = np.zeros((B, H, W, A, 1), dtype=np.float32)
-    matching_true_boxes = np.zeros((B, H, W, A, 4+num_cls), dtype=np.float32)
+    matching_true_boxes = np.zeros((B, H, W, A, 5+num_cls), dtype=np.float32)
     labels_ = labels.copy()
     labels_[..., 0:2] = labels_[..., 0:2] * np.array([H, W]).reshape(1, 2)
     for b in range(B):
@@ -99,15 +87,17 @@ def preprocess_true_boxes(labels, anchors, image_size, device, downsample, num_c
                 - ins_area
             )
             iou_scores = ins_area / (uni_area + 1e-8)
-            assert iou_scores.shape == (A, )
             idx = np.argmax(iou_scores, axis=-1)
 
-            detector_mask[b, i, j, idx] = 1
             matching_true_boxes[b, i, j, idx, 0] = box[0] / H
             matching_true_boxes[b, i, j, idx, 1] = box[1] / W
             matching_true_boxes[b, i, j, idx, 2] = box[2]
             matching_true_boxes[b, i, j, idx, 3] = box[3]
+            matching_true_boxes[b, i, j, idx, 4] = 1
             assert len(box) >= 4
-            for k in range(4, len(box)):
-                matching_true_boxes[b, i, j, idx, int(box[k])] = 1
-    return detector_mask, matching_true_boxes
+            # for multi-label
+            for k in box[4:]:
+                matching_true_boxes[b, i, j, idx, int(k)+5] = 1
+
+    matching_true_boxes = torch.from_numpy(matching_true_boxes).to(device)
+    return matching_true_boxes

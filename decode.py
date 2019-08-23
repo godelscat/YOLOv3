@@ -3,7 +3,6 @@ decode output of yolo model
 (tx, ty, tw, th) -> (bx, by, bw, bh)
 """
 import torch
-import torch.nn.functional as F
 
 """
 anchors: numpy array of (W, H)
@@ -12,11 +11,12 @@ feats: tensor one scale output of yolo
 predictions: reshape feats into (B, H, W, num_anchors, num_classes+5)
 """
 
-def decode(feats, anchors, num_classes, device):
+def decode(feats, anchors, device, num_cls=80):
     num_anchors = len(anchors)
     B, C, H, W = feats.size()
+    sig_fn = torch.nn.Sigmoid()
     predictions = (
-        feats.view(B, num_anchors, num_classes + 5, H, W)
+        feats.view(B, num_anchors, num_cls + 5, H, W)
         .permute(0, 3, 4, 1, 2)
         .contiguous()
     )
@@ -24,8 +24,8 @@ def decode(feats, anchors, num_classes, device):
     ty = predictions[..., 1:2]
     th = predictions[..., 2:3]
     tw = predictions[..., 3:4]
-    box_conf = F.sigmoid(predictions[..., 4:5])
-    box_cls = F.sigmoid(predictions[..., 5:])
+    box_conf = sig_fn(predictions[..., 4:5])
+    box_cls = sig_fn(predictions[..., 5:])
 
     """
     cal bx, by = sigmoid(tx, ty) + cx, cy
@@ -34,8 +34,8 @@ def decode(feats, anchors, num_classes, device):
     cx, cy = torch.meshgrid(torch.arange(H), torch.arange(W))
     cx = cx.view(1, H, W, 1, 1).to(torch.float).to(device)
     cy = cy.view(1, H, W, 1, 1).to(torch.float).to(device)
-    bx = (F.sigmoid(tx) + cx) / H
-    by = (F.sigmoid(ty) + cy) / W
+    bx = (sig_fn(tx) + cx) / H
+    by = (sig_fn(ty) + cy) / W
 
     """
     cal bh, bw and rescale by H, W
@@ -46,10 +46,16 @@ def decode(feats, anchors, num_classes, device):
     ph = anchors[..., 1:2]
     bw = pw * torch.exp(tw)
     bh = ph * torch.exp(th)
-    """
-    boxes = torch.cat(
-        (bx, by, bw, bh), dim=-1
-    )
-    """
     boxes = (bx, by, bw, bh)
     return boxes, box_conf, box_cls
+
+def full_decode(feats, anchors, anchor_mask, device, num_cls=80):
+    out = []
+    assert len(feats) == 3
+    for l in range(3):
+        feat = feats[l]
+        device = feat.device
+        anchor = anchors[anchor_mask[l]]
+        out_ = decode(feat, anchor, device, num_cls)
+        out.append(out_)
+    return out
