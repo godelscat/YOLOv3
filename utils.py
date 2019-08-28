@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import warnings
 
 """
 Transform (x, y, w, h) into (x1, y1, x2, y2)
@@ -29,8 +30,7 @@ def iou(box1, box2, eps=1e-8):
     x2 = torch.max(box1_x2, box2_x2)
     y2 = torch.max(box1_y2, box2_y2) 
 
-    zero_tensor = torch.zeros((1), device=device)
-    ins_area = torch.max((x1 - x2) * (y1 - y2), zero_tensor)
+    ins_area = (x1 - x2).clamp(min=0) * (y1 - y2).clamp(min=0)
     uni_area = (
         (box1_x1 - box1_x2) * (box1_y1 - box1_y2) + 
         (box2_x1 - box2_x2) * (box2_y1 - box2_y2)
@@ -101,3 +101,61 @@ def preprocess_true_boxes(labels, anchors, grid_size, device, num_cls=80):
 
     matching_true_boxes = torch.from_numpy(matching_true_boxes).to(device)
     return matching_true_boxes
+
+"""
+Non max suppression to filter predicted boxes
+Inputs:
+boxes: tensor
+        shape->[N, 4], corrd format(x1, y1, x2, y2)
+scores: tensor
+        shape->[N,]
+max_output_size: int
+        max number of boxes to be selected by nms
+iou_threshold: float
+        the threshold deciding whether boxes overlaps too much w/ respect to iou
+Returns:
+selected_indices: LongTensor
+        shape->[M,], M <= N
+"""
+def nms(boxes, scores, iou_threshold=0.5, max_output_size=None):
+    assert len(boxes) == len(scores)
+    device = boxes.device
+    if len(scores) == 0:
+        warnings.warn("No boxes need to be filtered by nms")
+        return torch.LongTensor([]).to(device)
+
+    x1 = boxes[..., 0]
+    y1 = boxes[..., 1]
+    x2 = boxes[..., 2]
+    y2 = boxes[..., 3]
+    area = (x2 - x1) * (y2- y1) # shape [N,]
+    _, indices = torch.sort(scores, descending=True)
+    selected_indices = []
+    flag = 0 # to track num of output
+    if max_output_size is None:
+        max_output_size = len(scores) + 1
+
+    while indices.numel() > 0:
+        idx = indices[0]
+        flag += 1
+        remain_idx = indices[1:]
+        selected_indices.append(idx.item())
+        # make sure no empty tensor in remain_idx
+        if remain_idx.numel() == 0:
+            break
+
+        x1_ = torch.max(x1[remain_idx], x1[idx])
+        y1_ = torch.max(y1[remain_idx], y1[idx])
+        x2_ = torch.min(x2[remain_idx], x2[idx])
+        y2_ = torch.min(y2[remain_idx], y2[idx])
+        ins = (x2_ - x1_).clamp(min=0) * (y2_ - y1_).clamp(min=0)
+        iou = ins / (area[idx] + area[remain_idx] - ins)
+        keep_mask = iou < iou_threshold
+        indices = remain_idx[keep_mask]
+
+        if torch.sum(keep_mask) == 0:
+            break
+        if flag >= max_output_size:
+            break 
+    
+    return torch.LongTensor(selected_indices, device=device)
