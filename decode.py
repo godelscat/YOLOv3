@@ -46,8 +46,13 @@ def decode(feats, anchors, device, num_cls=80):
     ph = anchors[..., 1:2]
     bw = pw * torch.exp(tw)
     bh = ph * torch.exp(th)
-    boxes = (bx, by, bw, bh)
-    return boxes, box_conf, box_cls
+#    boxes = (bx, by, bw, bh)
+#    return boxes, box_conf, box_cls
+    out = torch.cat(
+        (bx, by, bw, bh, box_conf, box_cls), dim=-1
+    )
+    assert out.size() == (B, H, W, num_anchors, 85)
+    return out
 
 def full_decode(feats, anchors, anchor_mask, device, num_cls=80):
     out = []

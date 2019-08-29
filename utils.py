@@ -7,12 +7,11 @@ Transform (x, y, w, h) into (x1, y1, x2, y2)
 x->vertical; y->horizontal
 """
 def whToxy(box):
-    x, y, w, h = box
-    x1 = x - h/2.
-    y1 = y - w/2.
-    x2 = x + h/2.
-    y2 = y + w/2.
-    box_ = (x1, y1, x2, y2)
+    box_ = box.new_empty(box.shape)
+    box_[..., 0] = box[..., 0] - box[..., 2] / 2
+    box_[..., 1] = box[..., 1] - box[..., 3] / 2
+    box_[..., 2] = box[..., 0] + box[..., 2] / 2
+    box_[..., 3] = box[..., 1] + box[..., 3] / 2
     return box_
 
 """
@@ -20,24 +19,23 @@ calculate iou of two boxes
 box1: (x1, y1, x2, y2)
 box2: (x1, y1, x2, y2)
 """
-def iou(box1, box2, eps=1e-8):
-    box1_x1, box1_y1, box1_x2, box1_y2 = box1
-    box2_x1, box2_y1, box2_x2, box2_y2 = box2
-    device = box1_x1.device
+def iou(box1, box2):
+    box1_x1, box1_y1, box1_x2, box1_y2 = box1[...,0], box1[...,1], box1[...,2], box1[...,3]
+    box2_x1, box2_y1, box2_x2, box2_y2 = box2[...,0], box2[...,1], box2[...,2], box2[...,3]
 
     x1 = torch.max(box1_x1, box2_x1)
     y1 = torch.max(box1_y1, box2_y1)
-    x2 = torch.max(box1_x2, box2_x2)
-    y2 = torch.max(box1_y2, box2_y2) 
+    x2 = torch.min(box1_x2, box2_x2)
+    y2 = torch.min(box1_y2, box2_y2) 
 
-    ins_area = (x1 - x2).clamp(min=0) * (y1 - y2).clamp(min=0)
+    ins_area = (x2 - x1).clamp(min=0) * (y2 - y1).clamp(min=0)
     uni_area = (
         (box1_x1 - box1_x2) * (box1_y1 - box1_y2) + 
         (box2_x1 - box2_x2) * (box2_y1 - box2_y2)
         - ins_area
     )
 
-    iou_scores = ins_area / (uni_area + eps)
+    iou_scores = ins_area / uni_area
     return iou_scores
 
 """

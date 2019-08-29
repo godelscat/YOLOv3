@@ -30,6 +30,7 @@ anchors = np.array([
     [10, 13], [16, 30], [33, 23], [30, 61], [62, 45], 
     [59, 119], [116, 90], [156, 198], [373, 326]
 ])
+anchor_mask = np.array([[6, 7, 8], [3, 4, 5], [0, 1, 2]])
 image_size = (416, 416) # default input image size
 # transform into unit of image
 anchors = anchors / np.asarray(image_size).reshape(1,2)
@@ -47,9 +48,9 @@ for epoch in range(10):
     for imgs, tars in create_fake_data(image_size, num_of_batch=num_of_batch):
         imgs = imgs.to(device)
         feats = net(imgs)
-        loss_ = loss_fn(feats, tars, anchors, image_size, num_classes)
-        loss +=  loss_
+        loss_ = loss_fn(feats, tars, anchors, anchor_mask, device, image_size)
+        loss +=  loss_.item()
         optimizer.zero_grad()
         loss_.backward()
         optimizer.step()
-    print("epoch {0}, loss {1}".format(epoch, loss.item() / num_of_batch))
+    print("epoch {0}, loss {1}".format(epoch, loss / num_of_batch))

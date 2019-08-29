@@ -31,21 +31,19 @@ def one_scale_loss(
 
     B, H, W, A, _ = matching_true_boxes.size()
 
-    p_box, p_c, p_cls = decode(feats, anchors, device, num_cls)
-    p_x, p_y, p_w, p_h = p_box
+    #p_box, p_c, p_cls = decode(feats, anchors, device, num_cls)
+    out = decode(feats, anchors, device, num_cls)
+    p_box = out[..., 0:4]
+    p_c = out[..., 4:5]
+    p_cls = out[..., 5:]
 
     detector_mask = matching_true_boxes[...,4:5]
-    t_x = matching_true_boxes[..., 0:1] 
-    t_y = matching_true_boxes[..., 1:2]
-    t_w = matching_true_boxes[..., 2:3]
-    t_h = matching_true_boxes[..., 3:4]
-    t_box = (t_x, t_y, t_w, t_h)
+    t_box = matching_true_boxes[...,0:4]
 
     p_box = whToxy(p_box)
     t_box = whToxy(t_box)
 
     ious = iou(p_box, t_box) 
-    ious = torch.squeeze(ious, dim=-1)
     best_ious, _ = torch.max(ious, dim=3, keepdim=True)
 
     obj_mask = (best_ious > iou_threshold).to(torch.float)
@@ -53,7 +51,7 @@ def one_scale_loss(
     obj_mask = obj_mask.view(B, H, W, 1, 1)
 
     t_box = matching_true_boxes[..., 0:4]
-    p_box = torch.cat(p_box, dim=-1)
+    p_box = out[..., 0:4]
 
     """non object loss"""
     noobj_loss =  torch.sum(
