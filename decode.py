@@ -22,8 +22,8 @@ def decode(feats, anchors, device, num_cls=80):
     )
     tx = predictions[..., 0:1]
     ty = predictions[..., 1:2]
-    th = predictions[..., 2:3]
-    tw = predictions[..., 3:4]
+    tw = predictions[..., 2:3]
+    th = predictions[..., 3:4]
     box_conf = sig_fn(predictions[..., 4:5])
     box_cls = sig_fn(predictions[..., 5:])
 
@@ -31,7 +31,7 @@ def decode(feats, anchors, device, num_cls=80):
     cal bx, by = sigmoid(tx, ty) + cx, cy
     rescale by H, W
     """
-    cx, cy = torch.meshgrid(torch.arange(H), torch.arange(W))
+    cy, cx = torch.meshgrid(torch.arange(H), torch.arange(W))
     cx = cx.view(1, H, W, 1, 1).to(torch.float).to(device)
     cy = cy.view(1, H, W, 1, 1).to(torch.float).to(device)
     bx = (sig_fn(tx) + cx) / H
@@ -46,12 +46,9 @@ def decode(feats, anchors, device, num_cls=80):
     ph = anchors[..., 1:2]
     bw = pw * torch.exp(tw)
     bh = ph * torch.exp(th)
-#    boxes = (bx, by, bw, bh)
-#    return boxes, box_conf, box_cls
     out = torch.cat(
         (bx, by, bw, bh, box_conf, box_cls), dim=-1
     )
-    assert out.size() == (B, H, W, num_anchors, 85)
     return out
 
 def full_decode(feats, anchors, anchor_mask, device, num_cls=80):

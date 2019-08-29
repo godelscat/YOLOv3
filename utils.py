@@ -119,9 +119,8 @@ Returns:
 selected_indices: LongTensor
         shape->[M,], M <= N
 """
-def nms(boxes, scores, iou_threshold=0.5, max_output_size=None):
+def nms(boxes, scores, device, iou_threshold=0.5, max_output_size=None):
     assert len(boxes) == len(scores)
-    device = boxes.device
     if len(scores) == 0:
         warnings.warn("No boxes need to be filtered by nms")
         return torch.LongTensor([]).to(device)
@@ -160,8 +159,7 @@ def nms(boxes, scores, iou_threshold=0.5, max_output_size=None):
         if flag >= max_output_size:
             break 
     
-    return torch.LongTensor(selected_indices, device=device)
-
+    return torch.LongTensor(selected_indices).to(device)
 
 """
 filter yolo outputs by confidence threshold and nms
@@ -187,9 +185,15 @@ def filter(
     """let's assume one image per test"""
     for l in range(3):
         out = outputs[l]
-        b_ = out[..., 0:4].view(-1, 4) * scale #[H*W*A, 4]
-        s_ = out[..., 4:5].view(-1, 1) * out[..., 5:] # [H*W*A, num_cls]
-        c_ = torch.argmax(out[..., 5:].view(-1, num_cls)) # [H*W*A]
+        out_box = whToxy(out[...,0:4])
+        out_x1 = out_box[..., 0:1]
+        out_y1 = out_box[..., 1:2]
+        out_x2 = out_box[..., 2:3]
+        out_y2 = out_box[..., 3:4]
+        out_box = torch.cat((out_y1, out_x1, out_y2, out_x2), dim=-1)
+        b_ = out_box.view(-1, 4) * scale #[H*W*A, 4]
+        s_ = (out[..., 4:5] * out[..., 5:]).view(-1, num_cls) # [H*W*A, num_cls]
+        c_ = torch.argmax(out[..., 5:], dim=-1).view(-1) # [H*W*A]
         boxes.append(b_)
         scores.append(s_)
         classes.append(c_)
@@ -201,18 +205,21 @@ def filter(
     best_scores, _ = torch.max(scores, dim=-1) 
     mask = best_scores >= threshold
     boxes = boxes[mask]
-    scores = scores[mask]
-    classes = scores[mask]
+    scores = best_scores[mask]
+    classes = classes[mask]
+    print('initial size, ', classes.size())
 
-    """non max suppression"""
     boxes_ = []
     scores_ = []
     classes_ = []
     for c in range(num_cls):
-        cls_mask = classes == c
+        cls_mask = (classes == c)
+        if torch.sum(cls_mask) == 0:
+            continue
         selected_indices = nms(
             boxes[cls_mask],
             scores[cls_mask],
+            device,
             iou_threshold,
             max_output_size
         )
@@ -223,7 +230,26 @@ def filter(
     boxes_ = torch.cat(boxes_, dim=0)
     scores_ = torch.cat(scores_, dim=0)
     classes_ = torch.cat(classes_, dim=0)
+    print('selected size', classes_.size())
+
     return boxes_, scores_, classes_
+
+"""
+Preprocess input image to match Model input shape
+And add batch dimension
+Default Model Input shape is (416, 416)
+return: image_array-> numpy array
+        image_size-> (width, height)
+        image_format -> "jpg" or "png" or ...
+"""
+def preprocess_image(image_path, input_shape=(416, 416)):
+    im = Image.open(image_path)
+    image_size = im.size
+    im_ = im.resize(input_shape)
+    image = np.asarray(im_) / 225.
+    image = np.expand_dims(image, axis=0)
+    image = image.astype(np.float32)
+    return im, image, image_size
 
 """
 Following Code from coursea exercise notebook 

@@ -39,7 +39,7 @@ num_classes = 80
 """train"""
 net = YOLO()
 net.to(device)
-optimizer = torch.optim.Adam(net.parameters(), lr=1e-4)
+optimizer = torch.optim.Adam(net.parameters(), lr=1e-3)
 loss_fn = yolo_loss
 
 for epoch in range(10):
