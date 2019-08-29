@@ -1,6 +1,10 @@
 import numpy as np
 import torch
 import warnings
+from decode import full_decode
+from PIL import Image, ImageDraw, ImageFont
+import colorsys
+import random
 
 """
 Transform (x, y, w, h) into (x1, y1, x2, y2)
@@ -157,3 +161,115 @@ def nms(boxes, scores, iou_threshold=0.5, max_output_size=None):
             break 
     
     return torch.LongTensor(selected_indices, device=device)
+
+
+"""
+filter yolo outputs by confidence threshold and nms
+feats: tensor
+        raw-outputs of yolo
+"""
+def filter(
+    feats,
+    anchors,
+    image_size,
+    device,
+    num_cls=80,
+    threshold=0.6,
+    iou_threshold=0.5,
+    max_output_size=None
+):
+    anchor_mask = np.array([[6, 7, 8], [3, 4, 5], [0, 1, 2]])
+    outputs = full_decode(feats, anchors, anchor_mask, device, num_cls)
+    scale = torch.FloatTensor((image_size, image_size)).to(device).view(1,4)
+    boxes = []
+    scores = []
+    classes = []
+    """let's assume one image per test"""
+    for l in range(3):
+        out = outputs[l]
+        b_ = out[..., 0:4].view(-1, 4) * scale #[H*W*A, 4]
+        s_ = out[..., 4:5].view(-1, 1) * out[..., 5:] # [H*W*A, num_cls]
+        c_ = torch.argmax(out[..., 5:].view(-1, num_cls)) # [H*W*A]
+        boxes.append(b_)
+        scores.append(s_)
+        classes.append(c_)
+    boxes = torch.cat(boxes, dim=0)
+    scores = torch.cat(scores, dim=0)
+    classes = torch.cat(classes, dim=0)
+
+    """filter out predict scores lower than threshold"""
+    best_scores, _ = torch.max(scores, dim=-1) 
+    mask = best_scores >= threshold
+    boxes = boxes[mask]
+    scores = scores[mask]
+    classes = scores[mask]
+
+    """non max suppression"""
+    boxes_ = []
+    scores_ = []
+    classes_ = []
+    for c in range(num_cls):
+        cls_mask = classes == c
+        selected_indices = nms(
+            boxes[cls_mask],
+            scores[cls_mask],
+            iou_threshold,
+            max_output_size
+        )
+        boxes_.append(boxes[selected_indices])
+        scores_.append(scores[selected_indices])
+        classes_.append(classes[selected_indices])
+    
+    boxes_ = torch.cat(boxes_, dim=0)
+    scores_ = torch.cat(scores_, dim=0)
+    classes_ = torch.cat(classes_, dim=0)
+    return boxes_, scores_, classes_
+
+"""
+Following Code from coursea exercise notebook 
+https://www.coursera.org/learn/convolutional-neural-networks/notebook/bbBOL/car-detection-with-yolov2 
+"""
+
+def generate_colors(class_names):
+    hsv_tuples = [(x / len(class_names), 1., 1.) for x in range(len(class_names))]
+    colors = list(map(lambda x: colorsys.hsv_to_rgb(*x), hsv_tuples))
+    colors = list(map(
+        lambda x: (int(x[0] * 255), int(x[1] * 255), int(x[2] * 255)), colors))
+    random.seed(10101)  # Fixed seed for consistent colors across runs.
+    random.shuffle(colors)  # Shuffle colors to decorrelate adjacent classes.
+    random.seed(None)  # Reset seed to default.
+    return colors
+
+def draw_boxes(image, out_scores, out_boxes, out_classes, class_names, colors):
+    
+    font = ImageFont.truetype(
+        font='data/FiraMono-Medium.otf',size=np.floor(3e-2 * image.size[1] + 0.5).astype('int32'))
+    thickness = (image.size[0] + image.size[1]) // 300
+
+    for i, c in reversed(list(enumerate(out_classes))):
+        predicted_class = class_names[c]
+        box = out_boxes[i]
+        score = out_scores[i]
+
+        label = '{} {:.2f}'.format(predicted_class, score)
+
+        draw = ImageDraw.Draw(image)
+        label_size = draw.textsize(label, font)
+
+        top, left, bottom, right = box
+        top = max(0, np.floor(top + 0.5).astype('int32'))
+        left = max(0, np.floor(left + 0.5).astype('int32'))
+        bottom = min(image.size[1], np.floor(bottom + 0.5).astype('int32'))
+        right = min(image.size[0], np.floor(right + 0.5).astype('int32'))
+
+        if top - label_size[1] >= 0:
+            text_origin = np.array([left, top - label_size[1]])
+        else:
+            text_origin = np.array([left, top + 1])
+
+        # My kingdom for a good redistributable image drawing library.
+        for i in range(thickness):
+            draw.rectangle([left + i, top + i, right - i, bottom - i], outline=colors[c])
+        draw.rectangle([tuple(text_origin), tuple(text_origin + label_size)], fill=colors[c])
+        draw.text(text_origin, label, fill=(0, 0, 0), font=font)
+        del draw
