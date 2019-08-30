@@ -1,25 +1,26 @@
 import numpy as np
 import torch
 import warnings
-from decode import full_decode
 from PIL import Image, ImageDraw, ImageFont
 import torchvision.transforms as transforms
 import colorsys
 import random
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
-from matplotlib.ticker import NullLocator
 
 """
 Transform (x, y, w, h) into (x1, y1, x2, y2)
-x->vertical; y->horizontal
 """
-def whToxy(box):
+def whToxy(box, reversed=False):
     box_ = box.new_empty(box.shape)
-    box_[..., 0] = box[..., 0] - box[..., 2] / 2
-    box_[..., 1] = box[..., 1] - box[..., 3] / 2
-    box_[..., 2] = box[..., 0] + box[..., 2] / 2
-    box_[..., 3] = box[..., 1] + box[..., 3] / 2
+    if reversed:
+        box_[..., 0] = box[..., 1] - box[..., 3] / 2
+        box_[..., 1] = box[..., 0] - box[..., 2] / 2
+        box_[..., 2] = box[..., 1] + box[..., 3] / 2
+        box_[..., 3] = box[..., 0] + box[..., 2] / 2
+    else:
+        box_[..., 0] = box[..., 0] - box[..., 2] / 2
+        box_[..., 1] = box[..., 1] - box[..., 3] / 2
+        box_[..., 2] = box[..., 0] + box[..., 2] / 2
+        box_[..., 3] = box[..., 1] + box[..., 3] / 2
     return box_
 
 """
@@ -134,6 +135,7 @@ def nms(boxes, scores, device, iou_threshold=0.5, max_output_size=None):
     x2 = boxes[..., 2]
     y2 = boxes[..., 3]
     area = (x2 - x1) * (y2- y1) # shape [N,]
+    assert (area > 0).all()
     _, indices = torch.sort(scores, descending=True)
     selected_indices = []
     flag = 0 # to track num of output
@@ -167,90 +169,12 @@ def nms(boxes, scores, device, iou_threshold=0.5, max_output_size=None):
 
 
 """
-filter yolo outputs by confidence threshold and nms
-feats: tensor
-        raw-outputs of yolo
-"""
-def filter(
-    feats,
-    anchors,
-    image_size,
-    device,
-    num_cls=80,
-    threshold=0.6,
-    iou_threshold=0.5,
-    max_output_size=None
-):
-    anchor_mask = np.array([[6, 7, 8], [3, 4, 5], [0, 1, 2]])
-    outputs = full_decode(feats, anchors, anchor_mask, device, num_cls)
-    im_W, im_H = image_size
-    scale = torch.FloatTensor([im_H, im_W, im_H, im_W]).to(device).view(1,4)
-    boxes = []
-    scores = []
-    classes = []
-    """let's assume one image per test"""
-    for l in range(3):
-        out = outputs[l]
-        out_box = whToxy(out[...,0:4])
-        out_x1 = out_box[..., 0:1]
-        out_y1 = out_box[..., 1:2]
-        out_x2 = out_box[..., 2:3]
-        out_y2 = out_box[..., 3:4]
-        out_box = torch.cat((out_y1, out_x1, out_y2, out_x2), dim=-1)
-        b_ = out_box.view(-1, 4) * scale #[H*W*A, 4]
-        s_ = (out[..., 4:5] * out[..., 5:]).view(-1, num_cls) # [H*W*A, num_cls]
-        c_ = torch.argmax(out[..., 5:], dim=-1).view(-1) # [H*W*A]
-        boxes.append(b_)
-        scores.append(s_)
-        classes.append(c_)
-    boxes = torch.cat(boxes, dim=0)
-    scores = torch.cat(scores, dim=0)
-    classes = torch.cat(classes, dim=0)
-
-    """filter out predict scores lower than threshold"""
-    best_scores, _ = torch.max(scores, dim=-1) 
-    mask = best_scores >= threshold
-    boxes = boxes[mask]
-    scores = best_scores[mask]
-    classes = classes[mask]
-    
-    """
-    boxes_ = []
-    scores_ = []
-    classes_ = []
-    for c in range(num_cls):
-        cls_mask = (classes == c)
-        if torch.sum(cls_mask) == 0:
-            continue
-        selected_indices = nms(
-            boxes[cls_mask],
-            scores[cls_mask],
-            device,
-            iou_threshold,
-            max_output_size
-        )
-        boxes_.append(boxes[selected_indices])
-        scores_.append(scores[selected_indices])
-        classes_.append(classes[selected_indices])
-    boxes_ = torch.cat(boxes_, dim=0)
-    scores_ = torch.cat(scores_, dim=0)
-    classes_ = torch.cat(classes_, dim=0)
-    print('selected size', classes_.size())
-    """
-    selected_indices = nms(boxes, scores, device)
-    boxes_ = boxes[selected_indices]
-    scores_ = scores[selected_indices]
-    classes_ = classes[selected_indices]
-    
-    return boxes_, scores_, classes_
-
-"""
 Preprocess input image to match Model input shape
 And add batch dimension
 Default Model Input shape is (416, 416)
-return: image_array-> numpy array
+return: image-> tensor, channel-first
         image_size-> (width, height)
-        image_format -> "jpg" or "png" or ...
+        im-> PIL format
 """
 def preprocess_image(image_path, input_shape=(416, 416)):
     im = Image.open(image_path)
@@ -262,8 +186,8 @@ def preprocess_image(image_path, input_shape=(416, 416)):
     return im, image, image_size
 
 """
-Following Code from coursea exercise notebook 
-https://www.coursera.org/learn/convolutional-neural-networks/notebook/bbBOL/car-detection-with-yolov2 
+Following Code to draw boxes are from github repo: 
+https://github.com/allanzelener/YAD2K
 """
 
 def generate_colors(class_names):

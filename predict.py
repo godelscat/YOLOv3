@@ -2,6 +2,7 @@ import torch
 import utils
 import numpy as np
 from model import YOLO, load_weights
+from decode import filter
 
 """params"""
 image_path  = './data/car.jpg'
@@ -29,13 +30,13 @@ net.eval()
 with torch.no_grad():
     image = image.to(device)
     feats = net(image)
-    boxes_, scores_, classes_ = utils.filter(
+    boxes_, scores_, classes_ = filter(
         feats,
         anchors,
         image_size,
         device,
         num_cls,
-        threshold=0.6
+        threshold=0.4
     )
 
 boxes = boxes_.cpu().numpy()
@@ -43,4 +44,4 @@ scores = scores_.cpu().numpy()
 classes = classes_.cpu().numpy()
 colors = utils.generate_colors(class_names)
 utils.draw_boxes(im, scores, boxes, classes, class_names, colors)
-im.save("./data/out.jpg")
+im.save("./data/car_out.jpg")
