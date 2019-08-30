@@ -32,10 +32,10 @@ def decode(feats, anchors, device, num_cls=80):
     rescale by H, W
     """
     cy, cx = torch.meshgrid(torch.arange(H), torch.arange(W))
-    cx = cx.view(1, H, W, 1, 1).to(torch.float).to(device)
-    cy = cy.view(1, H, W, 1, 1).to(torch.float).to(device)
-    bx = (sig_fn(tx) + cx) / H
-    by = (sig_fn(ty) + cy) / W
+    cx = cx.view(1, H, W, 1, 1).float().to(device)
+    cy = cy.view(1, H, W, 1, 1).float().to(device)
+    bx = (sig_fn(tx) + cx) / W
+    by = (sig_fn(ty) + cy) / H
 
     """
     cal bh, bw and rescale by H, W

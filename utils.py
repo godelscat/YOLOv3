@@ -3,8 +3,12 @@ import torch
 import warnings
 from decode import full_decode
 from PIL import Image, ImageDraw, ImageFont
+import torchvision.transforms as transforms
 import colorsys
 import random
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from matplotlib.ticker import NullLocator
 
 """
 Transform (x, y, w, h) into (x1, y1, x2, y2)
@@ -161,6 +165,7 @@ def nms(boxes, scores, device, iou_threshold=0.5, max_output_size=None):
     
     return torch.LongTensor(selected_indices).to(device)
 
+
 """
 filter yolo outputs by confidence threshold and nms
 feats: tensor
@@ -178,7 +183,8 @@ def filter(
 ):
     anchor_mask = np.array([[6, 7, 8], [3, 4, 5], [0, 1, 2]])
     outputs = full_decode(feats, anchors, anchor_mask, device, num_cls)
-    scale = torch.FloatTensor((image_size, image_size)).to(device).view(1,4)
+    im_W, im_H = image_size
+    scale = torch.FloatTensor([im_H, im_W, im_H, im_W]).to(device).view(1,4)
     boxes = []
     scores = []
     classes = []
@@ -207,8 +213,8 @@ def filter(
     boxes = boxes[mask]
     scores = best_scores[mask]
     classes = classes[mask]
-    print('initial size, ', classes.size())
-
+    
+    """
     boxes_ = []
     scores_ = []
     classes_ = []
@@ -226,12 +232,16 @@ def filter(
         boxes_.append(boxes[selected_indices])
         scores_.append(scores[selected_indices])
         classes_.append(classes[selected_indices])
-    
     boxes_ = torch.cat(boxes_, dim=0)
     scores_ = torch.cat(scores_, dim=0)
     classes_ = torch.cat(classes_, dim=0)
     print('selected size', classes_.size())
-
+    """
+    selected_indices = nms(boxes, scores, device)
+    boxes_ = boxes[selected_indices]
+    scores_ = scores[selected_indices]
+    classes_ = classes[selected_indices]
+    
     return boxes_, scores_, classes_
 
 """
@@ -246,9 +256,9 @@ def preprocess_image(image_path, input_shape=(416, 416)):
     im = Image.open(image_path)
     image_size = im.size
     im_ = im.resize(input_shape)
-    image = np.asarray(im_) / 225.
-    image = np.expand_dims(image, axis=0)
-    image = image.astype(np.float32)
+    image = transforms.ToTensor()(im_)
+    c, h, w = image.shape
+    image = image.view(1, c, h, w)
     return im, image, image_size
 
 """

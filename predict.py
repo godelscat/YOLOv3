@@ -27,8 +27,7 @@ load_weights(net, weightsfile)
 net.eval()
 
 with torch.no_grad():
-    image = torch.from_numpy(image).to(device)
-    image = image.permute(0, 3, 1, 2).contiguous()
+    image = image.to(device)
     feats = net(image)
     boxes_, scores_, classes_ = utils.filter(
         feats,
