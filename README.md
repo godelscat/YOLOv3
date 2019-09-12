@@ -6,6 +6,8 @@ Below is the overall architecture of yolov3.
 
 ![model](https://github.com/godelscat/YOLOv3/blob/master/arch/yolov3.jpg)
 
+Number on the top right of block means looping over multi times.
+
 Every conv block except the final yolo output, including a conv layer, batchnormalization layer and a leaky relu layer.
 
 
